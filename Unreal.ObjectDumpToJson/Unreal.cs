@@ -101,35 +101,47 @@ namespace Unreal.ObjectDumpToJson
     [StructLayout(LayoutKind.Sequential, Size = 0x28)]
     public unsafe struct UObjectBase
     {
-        public IntPtr _vtable; // @ 0x0
+        /*public IntPtr _vtable; // @ 0x0
         public EObjectFlags ObjectFlags; // @ 0x8
         public uint InternalIndex; // @ 0xc
         public UClass* ClassPrivate; // @ 0x10 Type of this object. Used for reflection
         public FName NamePrivate; // @ 0x18
-        public UObjectBase* OuterPrivate; // @ 0x20 Object that is containing this object
+        public UObjectBase* OuterPrivate; // @ 0x20 Object that is containing this object*/
+        
+        public nint VTable;
+        public EObjectFlags ObjectFlags;
+        public int InternalIndex; 
+        public UClass* ClassPrivate;
+        public FName NamePrivate;
+        //public int ObjectListInternalIndex;
+        public UObjectBase* OuterPrivate;
     }
+    
     // Class data
-    [StructLayout(LayoutKind.Explicit, Size = 0x30)]
+    [StructLayout(LayoutKind.Sequential, Size = 0x30, Pack = 8)]
     public unsafe struct UField
     {
-        [FieldOffset(0x0)] public UObjectBase _super;
-        [FieldOffset(0x28)] public UField* next;
+        public UObjectBase BaseObj;
+        public UField* Next;
     }
-    [StructLayout(LayoutKind.Explicit, Size = 0xb0)]
+    
+    [StructLayout(LayoutKind.Sequential, Size = 0xB0, Pack = 8)]
     public unsafe struct UStruct
     {
-        [FieldOffset(0x0)] public UField _super;
-        [FieldOffset(0x40)] public UStruct* super_struct;
-        [FieldOffset(0x48)] public UField* children; // anything not a type field (e.g a class method) - beginning of linked list
-        [FieldOffset(0x50)] public FField* child_properties; // the data model - beginning of linked list
-        [FieldOffset(0x58)] public int properties_size;
-        [FieldOffset(0x5c)] public int min_alignment;
-        [FieldOffset(0x60)] public TArray<byte> Script;
-        [FieldOffset(0x70)] public FProperty* prop_link;
-        [FieldOffset(0x78)] public FProperty* ref_link;
-        [FieldOffset(0x80)] public FProperty* dtor_link;
-        [FieldOffset(0x88)] public FProperty* post_ct_link;
+        public UField Super;
+        private fixed byte Unknown[0x10];
+        public UStruct* SuperStruct;
+        public UField* Children; // anything not a type field (e.g a class method) - beginning of linked list
+        public FField* ChildProperties; // the data model - beginning of linked list
+        public int PropertiesSize;
+        public int MinAlignment;
+        public TArray<byte> Script;
+        public FProperty* PropertyLink; 
+        public FProperty* RefLink;
+        public FProperty* DestructorLink;
+        public FProperty* PostConstructLink;
     }
+    
     [StructLayout(LayoutKind.Explicit, Size = 0xc0)]
     public unsafe struct UScriptStruct
     {
@@ -198,142 +210,270 @@ namespace Unreal.ObjectDumpToJson
         [FieldOffset(0xd8)] public IntPtr exec_func_ptr;
     }
 
-    public enum EClassFlags : uint
-    {
-        /** No Flags */
-        CLASS_None = 0x00000000u,
-        /** Class is abstract and can't be instantiated directly. */
-        CLASS_Abstract = 0x00000001u,
-        /** Save object configuration only to Default INIs, never to local INIs. Must be combined with CLASS_Config */
-        CLASS_DefaultConfig = 0x00000002u,
-        /** Load object configuration at construction time. */
-        CLASS_Config = 0x00000004u,
-        /** This object type can't be saved; null it out at save time. */
-        CLASS_Transient = 0x00000008u,
-        /** This object type may not be available in certain context. (i.e. game runtime or in certain configuration). Optional class data is saved separately to other object types. (i.e. might use sidecar files) */
-        CLASS_Optional = 0x00000010u,
-        /** */
-        CLASS_MatchedSerializers = 0x00000020u,
-        /** Indicates that the config settings for this class will be saved to Project/User*.ini (similar to CLASS_GlobalUserConfig) */
-        CLASS_ProjectUserConfig = 0x00000040u,
-        /** Class is a native class - native interfaces will have CLASS_Native set, but not RF_MarkAsNative */
-        CLASS_Native = 0x00000080u,
-        /** Don't export to C++ header. */
-        CLASS_NoExport = 0x00000100u,
-        /** Do not allow users to create in the editor. */
-        CLASS_NotPlaceable = 0x00000200u,
-        /** Handle object configuration on a per-object basis, rather than per-class. */
-        CLASS_PerObjectConfig = 0x00000400u,
+	[Flags]
+	public enum EClassFlags : uint
+	{
+		/// <summary>
+		/// No Flags
+		/// </summary>
+		None = 0x00000000u,
 
-        /** Whether SetUpRuntimeReplicationData still needs to be called for this class */
-        CLASS_ReplicationDataIsSetUp = 0x00000800u,
+		/// <summary>
+		/// Class is abstract and can't be instantiated directly.
+		/// </summary>
+		Abstract = 0x00000001u,
 
-        /** Class can be constructed from editinline New button. */
-        CLASS_EditInlineNew = 0x00001000u,
-        /** Display properties in the editor without using categories. */
-        CLASS_CollapseCategories = 0x00002000u,
-        /** Class is an interface **/
-        CLASS_Interface = 0x00004000u,
-        /**  Do not export a constructor for this class, assuming it is in the cpptext **/
-        CLASS_CustomConstructor = 0x00008000u,
-        /** all properties and functions in this class are const and should be exported as const */
-        CLASS_Const = 0x00010000u,
+		/// <summary>
+		/// Save object configuration only to Default INIs, never to local INIs. Must be combined with "Config"
+		/// </summary>
+		DefaultConfig = 0x00000002u,
 
-        /** Class flag indicating objects of this class need deferred dependency loading */
-        CLASS_NeedsDeferredDependencyLoading = 0x00020000u,
+		/// <summary>
+		/// Load object configuration at construction time.
+		/// </summary>
+		Config = 0x00000004u,
 
-        /** Indicates that the class was created from blueprint source material */
-        CLASS_CompiledFromBlueprint = 0x00040000u,
+		/// <summary>
+		/// This object type can't be saved; null it out at save time.
+		/// </summary>
+		Transient = 0x00000008u,
 
-        /** Indicates that only the bare minimum bits of this class should be DLL exported/imported */
-        CLASS_MinimalAPI = 0x00080000u,
+		/// <summary>
+		/// This object type may not be available in certain context. (i.e. game runtime or in certain configuration). Optional class data is saved separately to other object types. (i.e. might use sidecar files)
+		/// </summary>
+		Optional = 0x00000010u,
 
-        /** Indicates this class must be DLL exported/imported (along with all of it's members) */
-        CLASS_RequiredAPI = 0x00100000u,
+		/// <summary>
+		/// 
+		/// </summary>
+		MatchedSerializers = 0x00000020u,
 
-        /** Indicates that references to this class default to instanced. Used to be subclasses of UComponent, but now can be any UObject */
-        CLASS_DefaultToInstanced = 0x00200000u,
+		/// <summary>
+		/// Indicates that the config settings for this class will be saved to Project/User*.ini (similar to "GlobalUserConfig")
+		/// </summary>
+		ProjectUserConfig = 0x00000040u,
 
-        /** Indicates that the parent token stream has been merged with ours. */
-        CLASS_TokenStreamAssembled = 0x00400000u,
-        /** Class has component properties. */
-        CLASS_HasInstancedReference = 0x00800000u,
-        /** Don't show this class in the editor class browser or edit inline new menus. */
-        CLASS_Hidden = 0x01000000u,
-        /** Don't save objects of this class when serializing */
-        CLASS_Deprecated = 0x02000000u,
-        /** Class not shown in editor drop down for class selection */
-        CLASS_HideDropDown = 0x04000000u,
-        /** Class settings are saved to <AppData>/..../Blah.ini (as opposed to CLASS_DefaultConfig) */
-        CLASS_GlobalUserConfig = 0x08000000u,
-        /** Class was declared directly in C++ and has no boilerplate generated by UnrealHeaderTool */
-        CLASS_Intrinsic = 0x10000000u,
-        /** Class has already been constructed (maybe in a previous DLL version before hot-reload). */
-        CLASS_Constructed = 0x20000000u,
-        /** Indicates that object configuration will not check against ini base/defaults when serialized */
-        CLASS_ConfigDoNotCheckDefaults = 0x40000000u,
-        /** Class has been consigned to oblivion as part of a blueprint recompile, and a newer version currently exists. */
-        CLASS_NewerVersionExists = 0x80000000u,
-    };
-    public enum EClassCastFlags : ulong
-    {
-        CASTCLASS_None = 0x0000000000000000,
+		/// <summary>
+		/// Class is a native class - native interfaces will have "Native" set, but not RF_MarkAsNative
+		/// </summary>
+		Native = 0x00000080u,
 
-        CASTCLASS_UField = 0x0000000000000001,
-        CASTCLASS_FInt8Property = 0x0000000000000002,
-        CASTCLASS_UEnum = 0x0000000000000004,
-        CASTCLASS_UStruct = 0x0000000000000008,
-        CASTCLASS_UScriptStruct = 0x0000000000000010,
-        CASTCLASS_UClass = 0x0000000000000020,
-        CASTCLASS_FByteProperty = 0x0000000000000040,
-        CASTCLASS_FIntProperty = 0x0000000000000080,
-        CASTCLASS_FFloatProperty = 0x0000000000000100,
-        CASTCLASS_FUInt64Property = 0x0000000000000200,
-        CASTCLASS_FClassProperty = 0x0000000000000400,
-        CASTCLASS_FUInt32Property = 0x0000000000000800,
-        CASTCLASS_FInterfaceProperty = 0x0000000000001000,
-        CASTCLASS_FNameProperty = 0x0000000000002000,
-        CASTCLASS_FStrProperty = 0x0000000000004000,
-        CASTCLASS_FProperty = 0x0000000000008000,
-        CASTCLASS_FObjectProperty = 0x0000000000010000,
-        CASTCLASS_FBoolProperty = 0x0000000000020000,
-        CASTCLASS_FUInt16Property = 0x0000000000040000,
-        CASTCLASS_UFunction = 0x0000000000080000,
-        CASTCLASS_FStructProperty = 0x0000000000100000,
-        CASTCLASS_FArrayProperty = 0x0000000000200000,
-        CASTCLASS_FInt64Property = 0x0000000000400000,
-        CASTCLASS_FDelegateProperty = 0x0000000000800000,
-        CASTCLASS_FNumericProperty = 0x0000000001000000,
-        CASTCLASS_FMulticastDelegateProperty = 0x0000000002000000,
-        CASTCLASS_FObjectPropertyBase = 0x0000000004000000,
-        CASTCLASS_FWeakObjectProperty = 0x0000000008000000,
-        CASTCLASS_FLazyObjectProperty = 0x0000000010000000,
-        CASTCLASS_FSoftObjectProperty = 0x0000000020000000,
-        CASTCLASS_FTextProperty = 0x0000000040000000,
-        CASTCLASS_FInt16Property = 0x0000000080000000,
-        CASTCLASS_FDoubleProperty = 0x0000000100000000,
-        CASTCLASS_FSoftClassProperty = 0x0000000200000000,
-        CASTCLASS_UPackage = 0x0000000400000000,
-        CASTCLASS_ULevel = 0x0000000800000000,
-        CASTCLASS_AActor = 0x0000001000000000,
-        CASTCLASS_APlayerController = 0x0000002000000000,
-        CASTCLASS_APawn = 0x0000004000000000,
-        CASTCLASS_USceneComponent = 0x0000008000000000,
-        CASTCLASS_UPrimitiveComponent = 0x0000010000000000,
-        CASTCLASS_USkinnedMeshComponent = 0x0000020000000000,
-        CASTCLASS_USkeletalMeshComponent = 0x0000040000000000,
-        CASTCLASS_UBlueprint = 0x0000080000000000,
-        CASTCLASS_UDelegateFunction = 0x0000100000000000,
-        CASTCLASS_UStaticMeshComponent = 0x0000200000000000,
-        CASTCLASS_FMapProperty = 0x0000400000000000,
-        CASTCLASS_FSetProperty = 0x0000800000000000,
-        CASTCLASS_FEnumProperty = 0x0001000000000000,
-        CASTCLASS_USparseDelegateFunction = 0x0002000000000000,
-        CASTCLASS_FMulticastInlineDelegateProperty = 0x0004000000000000,
-        CASTCLASS_FMulticastSparseDelegateProperty = 0x0008000000000000,
-        CASTCLASS_FFieldPathProperty = 0x0010000000000000,
-    };
-    [StructLayout(LayoutKind.Explicit, Size = 0x230)]
+		/// <summary>
+		/// Don't export to C++ header.
+		/// </summary>
+		[Obsolete("No longer used in the engine.")]
+		NoExport = 0x00000100u,
+
+		/// <summary>
+		/// Do not allow users to create in the editor.
+		/// </summary>
+		NotPlaceable = 0x00000200u,
+
+		/// <summary>
+		/// Handle object configuration on a per-object basis, rather than per-class.
+		/// </summary>
+		PerObjectConfig = 0x00000400u,
+
+		/// <summary>
+		/// Whether SetUpRuntimeReplicationData still needs to be called for this class
+		/// </summary>
+		ReplicationDataIsSetUp = 0x00000800u,
+
+		/// <summary>
+		/// Class can be constructed from editinline New button.
+		/// </summary>
+		EditInlineNew = 0x00001000u,
+
+		/// <summary>
+		/// Display properties in the editor without using categories.
+		/// </summary>
+		CollapseCategories = 0x00002000u,
+
+		/// <summary>
+		/// Class is an interface
+		/// </summary>
+		Interface = 0x00004000u,
+
+		/// <summary>
+		/// Config for this class is overridden in platform inis, reload when previewing platforms
+		/// </summary>	
+		PerPlatformConfig = 0x00008000u,
+
+		/// <summary>
+		/// all properties and functions in this class are const and should be exported as const
+		/// </summary>
+		Const = 0x00010000u,
+
+		/// <summary>
+		/// Class flag indicating objects of this class need deferred dependency loading
+		/// </summary>
+		NeedsDeferredDependencyLoading = 0x00020000u,
+
+		/// <summary>
+		/// Indicates that the class was created from blueprint source material
+		/// </summary>
+		CompiledFromBlueprint = 0x00040000u,
+
+		/// <summary>
+		/// Indicates that only the bare minimum bits of this class should be DLL exported/imported
+		/// </summary>
+		MinimalAPI = 0x00080000u,
+
+		/// <summary>
+		/// Indicates this class must be DLL exported/imported (along with all of it's members)
+		/// </summary>
+		RequiredAPI = 0x00100000u,
+
+		/// <summary>
+		/// Indicates that references to this class default to instanced. Used to be subclasses of UComponent, but now can be any UObject
+		/// </summary>
+		DefaultToInstanced = 0x00200000u,
+
+		/// <summary>
+		/// Indicates that the parent token stream has been merged with ours.
+		/// </summary>
+		TokenStreamAssembled = 0x00400000u,
+
+		/// <summary>
+		/// Class has component properties.
+		/// </summary>
+		HasInstancedReference = 0x00800000u,
+
+		/// <summary>
+		/// Don't show this class in the editor class browser or edit inline new menus.
+		/// </summary>
+		Hidden = 0x01000000u,
+
+		/// <summary>
+		/// Don't save objects of this class when serializing
+		/// </summary>
+		Deprecated = 0x02000000u,
+
+		/// <summary>
+		/// Class not shown in editor drop down for class selection
+		/// </summary>
+		HideDropDown = 0x04000000u,
+
+		/// <summary>
+		/// Class settings are saved to [AppData]/..../Blah.ini (as opposed to "DefaultConfig")
+		/// </summary>
+		GlobalUserConfig = 0x08000000u,
+
+		/// <summary>
+		/// Class was declared directly in C++ and has no boilerplate generated by UnrealHeaderTool
+		/// </summary>
+		Intrinsic = 0x10000000u,
+
+		/// <summary>
+		/// Class has already been constructed (maybe in a previous DLL version before hot-reload).
+		/// </summary>
+		Constructed = 0x20000000u,
+
+		/// <summary>
+		/// Indicates that object configuration will not check against ini base/defaults when serialized
+		/// </summary>
+		ConfigDoNotCheckDefaults = 0x40000000u,
+
+		/// <summary>
+		/// Class has been consigned to oblivion as part of a blueprint recompile, and a newer version currently exists.
+		/// </summary>
+		NewerVersionExists = 0x80000000u,
+
+		/// <summary>
+		/// Flags to inherit from base class
+		/// </summary>
+		Inherit = Transient | Optional | DefaultConfig | Config | PerObjectConfig | ConfigDoNotCheckDefaults | NotPlaceable | Const | HasInstancedReference |
+			Deprecated | DefaultToInstanced | GlobalUserConfig | ProjectUserConfig | NeedsDeferredDependencyLoading,
+
+		/// <summary>
+		/// These flags will be cleared by the compiler when the class is parsed during script compilation
+		/// </summary>
+		RecompilerClear = Inherit | Abstract | Native | Intrinsic | TokenStreamAssembled,
+
+		/// <summary>
+		/// These flags will be cleared by the compiler when the class is parsed during script compilation
+		/// </summary>
+		ShouldNeverBeLoaded = Native | Optional | Intrinsic | TokenStreamAssembled,
+
+		/// <summary>
+		/// These flags will be inherited from the base class only for non-intrinsic classes
+		/// </summary>
+		ScriptInherit = Inherit | EditInlineNew | CollapseCategories,
+
+		/// <summary>
+		/// This is used as a mask for the flags put into generated code for "compiled in" classes.
+		/// </summary>
+		SaveInCompiledInClasses = Abstract | DefaultConfig | GlobalUserConfig | ProjectUserConfig | PerPlatformConfig | Config | Transient | Optional | Native | NotPlaceable | PerObjectConfig |
+			ConfigDoNotCheckDefaults | EditInlineNew | CollapseCategories | Interface | DefaultToInstanced | HasInstancedReference | Hidden | Deprecated |
+			HideDropDown | Intrinsic | Const | MinimalAPI | RequiredAPI | MatchedSerializers | NeedsDeferredDependencyLoading,
+	};
+    
+	[Flags]
+	public enum EClassCastFlags : ulong
+	{
+		None = 0x0000000000000000,
+
+		UField = 0x0000000000000001,
+		FInt8Property = 0x0000000000000002,
+		UEnum = 0x0000000000000004,
+		UStruct = 0x0000000000000008,
+		UScriptStruct = 0x0000000000000010,
+		UClass = 0x0000000000000020,
+		FByteProperty = 0x0000000000000040,
+		FIntProperty = 0x0000000000000080,
+		FFloatProperty = 0x0000000000000100,
+		FUInt64Property = 0x0000000000000200,
+		FClassProperty = 0x0000000000000400,
+		FUInt32Property = 0x0000000000000800,
+		FInterfaceProperty = 0x0000000000001000,
+		FNameProperty = 0x0000000000002000,
+		FStrProperty = 0x0000000000004000,
+		FProperty = 0x0000000000008000,
+		FObjectProperty = 0x0000000000010000,
+		FBoolProperty = 0x0000000000020000,
+		FUInt16Property = 0x0000000000040000,
+		UFunction = 0x0000000000080000,
+		FStructProperty = 0x0000000000100000,
+		FArrayProperty = 0x0000000000200000,
+		FInt64Property = 0x0000000000400000,
+		FDelegateProperty = 0x0000000000800000,
+		FNumericProperty = 0x0000000001000000,
+		FMulticastDelegateProperty = 0x0000000002000000,
+		FObjectPropertyBase = 0x0000000004000000,
+		FWeakObjectProperty = 0x0000000008000000,
+		FLazyObjectProperty = 0x0000000010000000,
+		FSoftObjectProperty = 0x0000000020000000,
+		FTextProperty = 0x0000000040000000,
+		FInt16Property = 0x0000000080000000,
+		FDoubleProperty = 0x0000000100000000,
+		FSoftClassProperty = 0x0000000200000000,
+		UPackage = 0x0000000400000000,
+		ULevel = 0x0000000800000000,
+		AActor = 0x0000001000000000,
+		APlayerController = 0x0000002000000000,
+		APawn = 0x0000004000000000,
+		USceneComponent = 0x0000008000000000,
+		UPrimitiveComponent = 0x0000010000000000,
+		USkinnedMeshComponent = 0x0000020000000000,
+		USkeletalMeshComponent = 0x0000040000000000,
+		UBlueprint = 0x0000080000000000,
+		UDelegateFunction = 0x0000100000000000,
+		UStaticMeshComponent = 0x0000200000000000,
+		FMapProperty = 0x0000400000000000,
+		FSetProperty = 0x0000800000000000,
+		FEnumProperty = 0x0001000000000000,
+		USparseDelegateFunction = 0x0002000000000000,
+		FMulticastInlineDelegateProperty = 0x0004000000000000,
+		FMulticastSparseDelegateProperty = 0x0008000000000000,
+		FFieldPathProperty = 0x0010000000000000,
+		FLargeWorldCoordinatesRealProperty = 0x0080000000000000,
+		FOptionalProperty = 0x0100000000000000,
+		FVValueProperty = 0x0200000000000000,
+		FVRestValueProperty = 0x0400000000000000,
+		AllFlags = UInt64.MaxValue,
+	};
+    
+    /*[StructLayout(LayoutKind.Explicit, Size = 0x200)]
     public unsafe struct UClass
     {
         [FieldOffset(0x0)] public UStruct _super;
@@ -352,6 +492,56 @@ namespace Unreal.ObjectDumpToJson
         [FieldOffset(0x180)] public TMap super_func_map;
         [FieldOffset(0x1d8)] public TArray<IntPtr> interfaces;
         [FieldOffset(0x220)] public TArray<FNativeFunctionLookup> native_func_lookup;
+    }*/
+    
+    /*[StructLayout(LayoutKind.Explicit, Size = 0x230)]
+    public unsafe struct UClass
+    {
+	    [FieldOffset(0x0)] public UStruct _super;
+	    [FieldOffset(0xb0)] public IntPtr class_ctor; // InternalConstructor<class_UClassName> => UClassName::UClassName
+	    [FieldOffset(0xb8)] public IntPtr class_vtable_helper_ctor_caller;
+	    [FieldOffset(0xc0)] public IntPtr class_add_ref_objects;
+	    [FieldOffset(0xc8)] public uint class_status; // ClassUnique : 31, bCooked : 1
+	    [FieldOffset(0xcc)] public EClassFlags class_flags;
+	    [FieldOffset(0xd0)] public EClassCastFlags class_cast_flags;
+	    [FieldOffset(0xd8)] public UClass* class_within; // type of object containing the current object
+	    [FieldOffset(0xe0)] public UObjectBase* class_gen_by;
+	    [FieldOffset(0xe8)] public FName class_conf_name;
+	    [FieldOffset(0x100)] public TArray<UField> net_fields;
+	    [FieldOffset(0x118)] public UObjectBase* class_default_obj; // Default object of type described in UClass instance
+	    [FieldOffset(0x130)] public TMap func_map;
+	    [FieldOffset(0x180)] public TMap super_func_map;
+	    [FieldOffset(0x1d8)] public TArray<IntPtr> interfaces;
+	    [FieldOffset(0x220)] public TArray<FNativeFunctionLookup> native_func_lookup;
+    }*/
+    
+    [StructLayout(LayoutKind.Sequential, Size = 0x200)]
+    public unsafe struct UClass
+    {
+        public UStruct Super;
+        public nint ClassConstructor;
+        public nint ClassVTableHelperCtorCaller;
+        public nint CppClassStaticFunctions;
+        public int ClassUnique;
+        public int FirstOwnedClassRep;
+        public bool bCooked;
+        public bool bLayoutChanging;
+        public EClassFlags ClassFlags;
+        public EClassCastFlags ClassCastFlags;
+        public UClass* ClassWithin;
+        //public UObjectBase* ClassGeneratedBy; // WITH_EDITORONLY_DATA
+        //public FField* PropertiesPendingDestruction; // WITH_EDITORONLY_DATA
+        public FName ClassConfigName;
+        public TArray<FRepRecord> ClassReps;
+        public TArray<UField> NetFields;
+        public UObjectBase* ClassDefaultObject;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    public unsafe struct FRepRecord
+    {
+        public FProperty* Property;
+        public int Index;
     }
 
     [StructLayout(LayoutKind.Explicit, Size = 0x10)]
@@ -369,41 +559,76 @@ namespace Unreal.ObjectDumpToJson
         public long value; // Size : 0x10
     }
 
-    [StructLayout(LayoutKind.Explicit, Size = 0x60)]
+    /*[StructLayout(LayoutKind.Explicit, Size = 0x60)]
     public unsafe struct UEnum
     {
-        [FieldOffset(0x0)] public UField _super;
-        [FieldOffset(0x30)] public FString cpp_type;
-        [FieldOffset(0x40)] public TArray<UEnumEntry> entries;
+        [FieldOffset(0x0)] public UField Super;
+        [FieldOffset(0x30)] public FString CppType;
+        [FieldOffset(0x40)] public TArray<UEnumEntry> Names;
         [FieldOffset(0x58)] public IntPtr enum_disp_name_fn;
+    }*/
+    
+    [StructLayout(LayoutKind.Explicit, Size = 0x68, Pack = 8)]
+    public unsafe struct UEnum
+    {
+	    [FieldOffset(0x0)] public UField Super;
+	    [FieldOffset(0x30)] public FString CppType;
+	    [FieldOffset(0x40)] public TArray<UEnumEntry> Names;
+	    [FieldOffset(0x58)] public IntPtr enum_disp_name_fn;
     }
+    
     // Properties
-    [StructLayout(LayoutKind.Sequential, Size = 0x10)]
+    [StructLayout(LayoutKind.Sequential)]
     public unsafe struct FFieldObjectUnion
     {
-        public IntPtr field_or_obj;
-        public bool b_is_uobj;
+        public FField* Field;
+        public UObjectBase* Object;
     }
-    [StructLayout(LayoutKind.Explicit, Size = 0x40)]
+
+    /*[StructLayout(LayoutKind.Explicit, Size = 0x40)]
     public unsafe struct FFieldClass
     {
-        [FieldOffset(0x0)] public FName name;
-        [FieldOffset(0x20)] public FFieldClass* super;
-        [FieldOffset(0x28)] public FField* default_obj;
-        [FieldOffset(0x30)] public IntPtr ctor; // [PropertyName]::Construct (e.g for ArrayProperty, this would be FArrayProperty::Construct)
+	    [FieldOffset(0x0)] public FName Name;
+	    [FieldOffset(0x20)] public FFieldClass* SuperClass;
+	    [FieldOffset(0x28)] public FField* DefaultObject;
+	    [FieldOffset(0x30)] public IntPtr FieldConstructor; // [PropertyName]::Construct (e.g for ArrayProperty, this would be FArrayProperty::Construct)
+    }*/
+    
+    [StructLayout(LayoutKind.Sequential, Pack = 8)]
+    public unsafe struct FFieldClass
+    {
+	    public FName Name;
+	    public ulong Id;
+	    public ulong CastFlags;
+	    public EClassFlags ClassFlags;
+	    public FFieldClass* SuperClass;
+	    public FField* DefaultObject;
+	    public nint FieldConstructor;
+	    //public int Counter;
     }
 
-    [StructLayout(LayoutKind.Sequential, Size = 0x38)]
+    /*[StructLayout(LayoutKind.Sequential, Size = 0x38)]
     public unsafe struct FField
     {
-        public IntPtr _vtable; // @ 0x0
-        public FFieldClass* class_private; // @ 0x8
-        public FFieldObjectUnion owner; // @ 0x10
-        public FField* next; // @ 0x20
-        public FName name_private; // @ 0x28
-        public EObjectFlags flags_private; // @ 0x30
-
+	    public nint VTable;
+        public FFieldClass* ClassPrivate; // @ 0x8
+        public FFieldObjectUnion Owner; // @ 0x10
+        public FField* Next; // @ 0x20
+        public FName NamePrivate; // @ 0x28
+        public EObjectFlags FlagsPrivate; // @ 0x30
+    }*/ 
+    
+    [StructLayout(LayoutKind.Sequential, Pack = 8)]
+    public unsafe struct FField
+    {
+	    public nint VTable;
+        public FFieldClass* ClassPrivate; // @ 0x8
+        public FFieldObjectUnion* Owner; // @ 0x10
+        public FField* Next; // @ 0x20
+        public FName NamePrivate; // @ 0x28
+        public EObjectFlags FlagsPrivate; // @ 0x30
     }
+    
     public enum EPropertyFlags : ulong
     {
         CPF_None = 0,
@@ -466,25 +691,25 @@ namespace Unreal.ObjectDumpToJson
         CPF_SkipSerialization = 0x0080000000000000, ///< Property shouldn't be serialized, can still be exported to text
     };
 
-    [StructLayout(LayoutKind.Sequential, Size = 0x78)]
+    [StructLayout(LayoutKind.Sequential, Pack = 8, Size = 0x70)] // 0x70 works for most properties, but some have their properties offset by 8 from the base property for some reason...
     public unsafe struct FProperty
     // FInt8Property, FInt16Property, FIntProperty, FInt64Property
     // FUint8Property, FUint16Property, FUintProperty, FUint64Property
     // FFloatProperty, FDoubleProperty, FNameProperty, FStrProperty
     {
-        public FField _super; // @ 0x0
-        public int array_dim; // @ 0x38
-        public int element_size; // @ 0x3c
-        public EPropertyFlags property_flags; // @ 0x40
-        public ushort rep_index; // @ 0x48
-        public byte blueprint_rep_cond; // @ 0x4a
-        public byte Field4B; // @ 0x4b
-        public int offset_internal; // @ 0x4c
-        public FName rep_notify_func; // @ 0x50
-        public FProperty* prop_link_next; // @ 0x58
-        public FProperty* next_ref; // @ 0x60
-        public FProperty* dtor_link_next; // @ 0x68
-        public FProperty* post_ct_link_next; // @ 0x70
+        public FField Super; // @ 0x0
+        public int ArrayDim; // @ 0x38
+        public int ElementSize; // @ 0x3c
+        public EPropertyFlags PropertyFlags; // @ 0x40
+        public ushort RepIndex; // @ 0x48
+        public byte BlueprintReplicationCondition; // @ 0x4a
+        //public byte Field4B; // @ 0x4b
+        public int Offset_Internal; // @ 0x4c
+        public FProperty* PropertyLinkNext; // @ 0x58
+        public FProperty* NextRef; // @ 0x60
+        public FProperty* DestructorLinkNext; // @ 0x68
+        public FProperty* PostConstructLinkNext; // @ 0x70
+        public FName RepNotifyFunc; // @ 0x50
     }
     [StructLayout(LayoutKind.Sequential, Size = 0x80)]
     public unsafe struct FByteProperty
@@ -501,40 +726,41 @@ namespace Unreal.ObjectDumpToJson
         public byte byte_mask; // @ 0x7a
         public byte field_mask; // @ 0x7b
     }
-    [StructLayout(LayoutKind.Sequential, Size = 0x80)]
+    [StructLayout(LayoutKind.Sequential)]
     public unsafe struct FObjectProperty
     // FObjectPtrProperty, FWeakObjectProperty, FLazyObjectProperty, FSoftObjectProperty, FInterfaceProperty
     {
         // Defines a reference variable to another object
-        public FProperty _super; // @ 0x0
-        public UClass* prop_class; // @ 0x78
+        public FProperty Super; // @ 0x0
+        public UClass* PropertyClass; // @ 0x78
     }
-    [StructLayout(LayoutKind.Sequential, Size = 0x88)]
+    [StructLayout(LayoutKind.Sequential)]
     public unsafe struct FClassProperty
     // FClassPtrProperty, FSoftClassProperty
     {
-        public FObjectProperty _super; // @ 0x0
-        public UClass* meta; // @ 0x80
+        public FObjectProperty Super; // @ 0x0
+        public UClass* MetaClass; // @ 0x80
     }
-    [StructLayout(LayoutKind.Sequential, Size = 0x88)]
+    [StructLayout(LayoutKind.Sequential, Pack = 8)]
     public unsafe struct FArrayProperty
     {
-        public FProperty _super; // @ 0x0
-        public FProperty* inner; // @ 0x78
-        public uint flags; // @ 0x80
+        public FProperty Super; // @ 0x0
+        public byte Flags; // @ 0x80
+        public FProperty* Inner; // @ 0x78
     }
     [StructLayout(LayoutKind.Sequential, Size = 0xa8)]
     public unsafe struct FMapProperty
     {
-        public FProperty _super; // @ 0x0
-        public FProperty* key_prop; // @ 0x78
-        public FProperty* value_prop; // @ 0x80
+        public FProperty Super; // @ 0x0
+        public FProperty* KeyProp; // @ 0x78
+        public FProperty* ValueProp; // @ 0x80
     }
-    [StructLayout(LayoutKind.Sequential, Size = 0x98)]
+    [StructLayout(LayoutKind.Sequential)]
     public unsafe struct FSetProperty
     {
-        public FProperty _super; // @ 0x0
-        public FProperty* elem_prop; // @ 0x78
+        public FProperty Super; // @ 0x0
+        //private fixed byte Unknown[8];
+        public FProperty* ElementProp; // @ 0x78
     }
     [StructLayout(LayoutKind.Sequential, Size = 0x80)]
     public unsafe struct FStructProperty
@@ -580,7 +806,7 @@ namespace Unreal.ObjectDumpToJson
         [FieldOffset(0x8)] public uint pool_count;
         [FieldOffset(0xc)] public uint name_count;
         public IntPtr GetPool(uint pool_idx) { fixed (FNamePool* self = &this) return *((IntPtr*)(self + 1) + pool_idx); }
-        public string GetString(FName name) => GetString(name.pool_location);
+
         public string GetString(uint pool_loc)
         {
             fixed (FNamePool* self = &this)
@@ -595,7 +821,7 @@ namespace Unreal.ObjectDumpToJson
 
     }
     // For g_objectArray
-    [StructLayout(LayoutKind.Explicit, Size = 0x30)]
+    /*[StructLayout(LayoutKind.Explicit, Size = 0x30)]
     public unsafe struct FUObjectArray
     {
         [FieldOffset(0x0)] public int ObjFirstGCIndex;
@@ -607,12 +833,68 @@ namespace Unreal.ObjectDumpToJson
         // Max number of chunks is 0x21 (33)
         [FieldOffset(0x2c)] public int NumChunks;
         // 0x30: Critical Section
+    }*/
+
+    [StructLayout(LayoutKind.Sequential)]
+    public unsafe struct FUObjectArray
+    {
+        /** First index into objects array taken into account for GC.							*/
+        public int ObjFirstGCIndex;
+        /** Index pointing to last object created in range disregarded for GC.					*/
+        public int ObjLastNonGCIndex;
+        /** Maximum number of objects in the disregard for GC Pool */
+        public int MaxObjectsNotConsideredByGC;
+
+        /** If true this is the intial load and we should load objects int the disregarded for GC range.	*/
+        public bool OpenForDisregardForGC;
+        
+        /** Array of all live objects.											*/
+        public FChunkedFixedUObjectArray ObjObjects;
     }
-    [StructLayout(LayoutKind.Sequential, Size = 0x18)]
+    
+    [StructLayout(LayoutKind.Sequential)]
+    public unsafe struct FChunkedFixedUObjectArray
+    {
+	    const int NumElementsPerChunk = 64 * 1024;
+		    
+        /** Primary table to chunks of pointers **/
+        public FUObjectItem** Objects;
+        /** If requested, a contiguous memory where all objects are allocated **/
+        public FUObjectItem* PreAllocatedObjects;
+        /** Maximum number of elements **/
+        public int MaxElements;
+        /** Number of elements we currently have **/
+        public int NumElements;
+        /** Maximum number of chunks **/
+        public int MaxChunks;
+        /** Number of chunks we currently have **/
+        public int NumChunks;
+
+        public readonly FUObjectItem* GetObjectPtr(int index)
+        {
+	        var chunkIndex = index / NumElementsPerChunk;
+	        var withinChunkIndex = index % NumElementsPerChunk;
+	        FUObjectItem* chunk = Objects[chunkIndex];
+	        return chunk + withinChunkIndex;
+        }
+    }
+
+    [StructLayout(LayoutKind.Sequential, Pack =  8)]
     public unsafe struct FUObjectItem
     {
         public UObjectBase* Object;
+        public int Flags;
+        public int ClusterRootIndex;
+        public int SerialNumber;
+        public int RefCount;
     }
+
+    /*[StructLayout(LayoutKind.Sequential, Size = 0x18)]
+    public unsafe struct FUObjectItem
+    {
+        public UObjectBase* Object;
+    }*/
+    
     // For StaticConstructObject_Internal
     [StructLayout(LayoutKind.Explicit, Size = 0x40)]
     public unsafe struct FStaticConstructObjectParameters
