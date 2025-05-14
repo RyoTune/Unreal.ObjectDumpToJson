@@ -36,13 +36,15 @@ namespace Unreal.ObjectDumpToJson
             ProgramName = programName;
             unsafe
             {
-                _startupScanner.AddMainModuleScan("48 8B 05 ?? ?? ?? ?? 48 8B 0C ?? 48 8D 04 ?? 48 85 C0 74 ?? 44 39 40 ?? 75 ?? F7 40 ?? 00 00 00 30 75 ?? 48 8B 00", result =>
+                _startupScanner.AddMainModuleScan("8B 05 ?? ?? ?? ?? 2B 05 ?? ?? ?? ?? 2B 05 ?? ?? ?? ?? 44 89 05", result =>
                 {
-                    var globalArrayPtr = Utils.GetGlobalAddress((nint)(_baseAddress + result.Offset + 3)) - 0x10;
+                    var globalArrayPtr = Utils.GetGlobalAddress((nint)(_baseAddress + result.Offset + 14));
                     _logger.WriteLine($"[RESEARCH] Found FUObjectArray at 0x{globalArrayPtr:X}");
                     g_objectArray = (FUObjectArray*)globalArrayPtr;
                 });
-                _startupScanner.AddMainModuleScan("4C 8D 05 ?? ?? ?? ?? EB ?? 48 8D 0D ?? ?? ?? ?? E8 ?? ?? ?? ?? 4C 8B C0 C6 05 ?? ?? ?? ?? 01 48 8B 44 24 ?? 48 8B D3 48 C1 E8 20 8D 0C ?? 49 03 4C ?? ?? E8 ?? ?? ?? ?? 48 8B C3", result =>
+                
+                // FName::Compare -> Sub-function call -> FNamePool call.
+                _startupScanner.AddMainModuleScan("48 8D 0D ?? ?? ?? ?? E8 ?? ?? ?? ?? 4C 8B C0 C6 05 ?? ?? ?? ?? 01 8B D3 0F B7 C3 89 44 24", result =>
                 {
                     var namePoolPtr = Utils.GetGlobalAddress((nint)(_baseAddress + result.Offset + 3));
                     _logger.WriteLine($"[RESEARCH] Found FGlobalNamePool at 0x{namePoolPtr:X}");
