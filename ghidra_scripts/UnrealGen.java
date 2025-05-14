@@ -239,6 +239,12 @@ public class UnrealGen extends GhidraScript {
 		}
 		
 		public void AddToStruct(StructureDataType struct, String name, int offset, DataType type) {
+			if (type == null)
+			{
+				println(name + " type is null.");
+				return;
+			}
+
 			struct.replaceAtOffset(offset, type, type.getLength(), name, null);
 		}
 	}
@@ -401,7 +407,18 @@ public class UnrealGen extends GhidraScript {
 		
 		public void CommitFieldData() {
 			println("Committing field data for " + Name);
-			if (SuperName != null) struct_data.replaceAtOffset(0, GetStructDTMData(SuperName), GetStructDTMData(SuperName).getLength(), "Super", null);
+			if (SuperName != null)
+			{
+				Structure superStructData = GetStructDTMData(SuperName);
+				if (superStructData != null)
+				{
+					struct_data.replaceAtOffset(0, superStructData, superStructData.getLength(), "Super", null);
+				}
+				else
+				{
+					println(SuperName + " supername is defined but struct data is missing.");
+				}
+			}
 			for (var field : Fields) { field.AddToStructure(struct_data); }
 		}
 		public static String GetSuperType(JsonElement superElement) { return (superElement.isJsonNull()) ? null : superElement.getAsString(); }
@@ -503,6 +520,11 @@ public class UnrealGen extends GhidraScript {
 		public String toString() { return super.toString() + ": " + Name + " @ " + Offset + ", Size " + Size; }
 		public abstract DataType GetType();
 		public void AddToStructure(Structure struct) { 
+			if (struct == null)
+			{
+				println(Name + " AddToStructure failed from null struct data.");
+				return;
+			}
 			println("Adding " + Name + " ( " + this.getClass().getName() + ") to " + struct.getName() + " @ " + Offset);
 			struct.replaceAtOffset(Offset, GetType(), GetType().getLength(), Name, null); 
 		}
@@ -636,6 +658,12 @@ public class UnrealGen extends GhidraScript {
 			this.FieldMask = FieldMask;
 		}
 		public void AddToStructure(Structure struct) {
+			if (struct == null)
+			{
+				println(Name + " AddToStructure failed from null struct data.");
+				return;
+			}
+
 			// create a bitfield
 			println("Adding " + Name + " ( " + this.getClass().getName() + ") to " + struct.getName() + " @ " + Offset 
 					+ "( bit offset" + Integer.numberOfTrailingZeros(ByteMask) + ", bit size " + Integer.bitCount(FieldMask));
@@ -718,7 +746,13 @@ public class UnrealGen extends GhidraScript {
 		private void SetDTMName() {
 			UnrealStruct tgt_struct = LoadedClasses.get(ValueName);
 			if (tgt_struct == null) tgt_struct = LoadedStructs.get(ValueName);
-			if (tgt_struct != null) DTMName = tgt_struct.struct_data.getName();
+			if (tgt_struct != null && tgt_struct.struct_data != null) DTMName = tgt_struct.struct_data.getName();
+
+			if (tgt_struct != null && tgt_struct.struct_data == null)
+			{
+				println(tgt_struct.Name + " struct_data is null.");
+			}
+
 			else {
 				if (LoadedEnums.get(ValueName) != null) { // is enum
 					DTMName = ValueName; // otherwise it's an enum, which uses the normal value name	
